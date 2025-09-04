@@ -1,4 +1,6 @@
-from sqlalchemy import ForeignKey, Enum
+from typing import List
+
+from sqlalchemy import ForeignKey, Enum as SqlEnum, String
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 import enum
 
@@ -14,32 +16,27 @@ class RubricScoreLevel(int, enum.Enum):
     OUTSTANDING = 5
 
 
-class RubricLabel(str, enum.Enum):
-    BELOW = "Below Expectations"
-    MEETS = "Meets Expectations"
-    ABOVE = "Above Average"
-    EXCEEDS = "Exceeds Expectations"
-    OUTSTANDING = "Outstanding"
-
-
 class CompetencyRubricLevel(AbstractBaseModel, Base):
     __tablename__ = "competency_rubric_levels"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    level: Mapped[RubricScoreLevel] = mapped_column(
+        SqlEnum(RubricScoreLevel, name="rubric_score_level_enum"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False)
+
     competency_id: Mapped[int] = mapped_column(
         ForeignKey("competencies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
-    level: Mapped[RubricScoreLevel] = mapped_column(
-        Enum(RubricScoreLevel, name="rubric_score_level_enum"), nullable=False
+    indicators: Mapped[List["EvaluationIndicator"]] = relationship(
+        "EvaluationIndicator",
+        back_populates="rubric_level",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
-    label: Mapped[RubricLabel] = mapped_column(
-        Enum(RubricLabel, name="rubric_label_enum"), nullable=False
-    )
-    description: Mapped[str] = mapped_column(nullable=True)
-    key_indicators: Mapped[str] = mapped_column(nullable=True)
 
     competency: Mapped["Competency"] = relationship(
         "Competency",
