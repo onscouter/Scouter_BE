@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import uuid
 from enum import Enum
 from typing import List
 
-from sqlalchemy import ForeignKey, Integer, String, Enum as SqlEnum, text, Boolean
+from sqlalchemy import ForeignKey, Integer, String, Enum as SqlEnum, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.abstract_base import AbstractBaseModel
@@ -21,6 +20,17 @@ class RoleEnum(str, Enum):
 class Employee(AbstractBaseModel, AbstractPersonMixin, Base):
     __tablename__ = "employees"
 
+    username: Mapped[str] = mapped_column(
+        String(32),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    password: Mapped[str] = mapped_column(
+        String(128),
+        nullable=True
+    )
+
     role: Mapped[RoleEnum] = mapped_column(
         SqlEnum(RoleEnum, name="role_enum", native_enum=False),
         nullable=False,
@@ -28,20 +38,7 @@ class Employee(AbstractBaseModel, AbstractPersonMixin, Base):
         server_default=text("'admin'"),
         index=True,
     )
-    is_onboarding: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=text("false"),
-        index=True
-    )
-    auth0_id: Mapped[str] = mapped_column(
-        String(64),
-        nullable=False,
-        unique=True,
-        index=True,
-        default=lambda: f"temp|{uuid.uuid4()}",
-    )
+
     job_position_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("job_positions.id", ondelete="CASCADE"),

@@ -45,10 +45,3 @@ class Company(AbstractBaseModel, Base):
         lazy="selectin",
     )
 
-    access_codes: Mapped[List["AccessCode"]] = relationship(
-        "AccessCode",
-        back_populates="company",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        lazy="selectin",
-    )

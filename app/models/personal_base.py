@@ -13,10 +13,14 @@ from app.models.common import PhoneNumber
 class AbstractPersonMixin:
     __abstract__ = True
 
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[str] = mapped_column(String(255), nullable=True)
 
     email: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
+        String(128),
+        unique=True,
+        index=True,
+        nullable=False,
     )
 
     @declared_attr

@@ -1,182 +1,155 @@
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, status, Request
-from app.core.auth import verify_token
-from app.db.init_db import get_db
+from uuid import UUID
+from fastapi import APIRouter, Depends, status, Request, Header, Response, HTTPException
+from jose import JWTError
 from sqlalchemy.orm import Session
-from app.models import Employee, AccessCode
-from fastapi import HTTPException
-from typing import Union
+
+from app.core.auth import (
+    verify_token,
+    create_token,
+    decode_token,
+    create_refresh_token,
+    set_refresh_token,
+    clear_refresh_token,
+)
+from app.core.security import verify_password, hash_password
+from app.db.init_db import get_db
+from app.models import Employee, JobPosition
+from app.models.core.job_position import PositionEnum
 from app.rate_limiter import limiter
-from limits.util import parse_many
 from limits.strategies import FixedWindowRateLimiter
-
-
-from app.schemas.access_gate import AccessGateRequest, AccessGateOut
-from app.schemas.employee import EmployeeOut, EmployeeBase
-from app.schemas.onboarding import NeedsOnboardingOut
+from app.schemas.login import LoginPayload, AuthResponse
+from app.schemas.employee import EmployeeOut, EmployeePut
 
 router = APIRouter()
 
 storage = limiter.limiter.storage
 rate_limiter = FixedWindowRateLimiter(storage)
 
-# @router.get(
-#     "/example",
-#     response_model=ExampleOut,
-#     status_code=status.HTTP_200_OK,
-#     summary="Summary of what this does",
-#     response_description="Successful response",
-#     responses={404: {"description": "Not found"}},
-# )
-# def get_example(...):
-#     """
-#     Describe what the route does, who can call it, and edge cases.
-#     """
 
-# start with response_model, raise HTTPException
-
-
-@router.get(
-    "/me",
-    response_model=EmployeeOut,
-    status_code=status.HTTP_200_OK,
-    summary="Get current logged-in employee info",
-    response_description="Employee info for the current authenticated user",
-    responses={
-        404: {"description": "User not found"},
-        401: {"description": "Not authenticated"},
-    },
-)
-def get_me(payload: dict = Depends(verify_token), db: Session = Depends(get_db)):
-    """
-    Fetch the currently logged-in employee's profile using their Auth0 ID.
-    """
-    auth0_id = payload["sub"]
-
-    employee = db.query(Employee).filter_by(auth0_id=auth0_id).first()
-
-    if not employee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
-    return employee
-
-
-@router.get(
-    "/login",
-    response_model=Union[EmployeeOut, NeedsOnboardingOut],
-    status_code=status.HTTP_200_OK,
-    summary="Authenticate user and check onboarding status",
-    responses={
-        404: {"description": "User not onboarded"},
-        401: {"description": "Unauthorized"},
-    },
-)
-@limiter.limit("5/minute")
-def login(
-        request: Request,
-        payload: dict = Depends(verify_token),
-        db: Session = Depends(get_db),
-):
-    auth0_id = payload["sub"]
-    email = payload.get("email")
-
-    employee = db.query(Employee).filter_by(auth0_id=auth0_id).first()
-    if employee:
-        print("employee")
-        return EmployeeOut.model_validate(employee)
-
-    if email:
-        print("need verify")
-        user_by_email = db.query(Employee).filter_by(email=email).first()
-        if user_by_email:
-            employee_base = EmployeeBase.model_validate(user_by_email)
-            return NeedsOnboardingOut(employee=employee_base, needs_onboarding=True)
-
-    raise HTTPException(status_code=404, detail="User not onboarded")
-
-
-@router.post("/access-gate/verify", response_model=AccessGateOut)
-@limiter.exempt
-def verify_access_code(
-        request: Request,
-        data: AccessGateRequest,
-        db: Session = Depends(get_db),
-        payload: dict = Depends(verify_token),
-):
-    email = payload.get("email")
-    auth0_id = payload["sub"]
-
-    rate_limiter = FixedWindowRateLimiter(limiter.limiter.storage)
-    limits = parse_many("5/minute;10/hour")
-    for limit in limits:
-        key = f"rate-limit:{auth0_id}"
-        if not rate_limiter.hit(limit, key):
-            raise HTTPException(status_code=429, detail="Too many access attempts.")
-
-    employee = db.query(Employee).filter_by(email=email).first()
-    if not employee:
-        raise HTTPException(status_code=404, detail="User not found.")
-
-    access_code = (
-        db.query(AccessCode)
-        .filter_by(
-            code=data.access_code,
-            role=employee.role,
-            is_active=True,
-            company_id=employee.company_id,
-        )
-        .first()
-    )
-
-    if not access_code:
-        raise HTTPException(status_code=400, detail="Invalid or expired access code.")
-
-    if employee.company_id != access_code.company_id:
-        raise HTTPException(
-            status_code=403, detail="Access code does not match user's company."
-        )
+# ───────────────────────────────────────────────────────────────
+@router.post("/refresh")
+def refresh_token(request: Request, response: Response, db=Depends(get_db)):
+    token = request.cookies.get("refresh_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
 
     try:
-        employee.auth0_id = auth0_id
-        employee.is_onboarding = True
-        db.commit()
-        db.refresh(employee)
-    except Exception as e:
-        db.rollback()
-        print("DB commit failed:", e)
-        raise HTTPException(status_code=500, detail="Failed to update employee.")
+        payload = decode_token(token)
+        if payload.get("purpose") != "refresh":
+            raise HTTPException(status_code=403, detail="Invalid token purpose")
+        user_id = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=403, detail="Invalid or expired refresh token")
 
-    employee = EmployeeOut.model_validate(employee)
+    employee = db.query(Employee).filter_by(public_id=user_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    return AccessGateOut(
-        success=True,
-        employee=employee
+    access_token = create_token(employee.public_id)
+    return {"access_token": access_token}
+
+
+@router.post("/logout")
+def logout(response: Response):
+    clear_refresh_token(response)
+    return {"detail": "Logged out"}
+
+
+# ───────────────────────────────────────────────────────────────
+@router.get("/me", response_model=EmployeeOut)
+def get_me(payload: dict = Depends(verify_token), db: Session = Depends(get_db)):
+    try:
+        employee_id = UUID(payload["sub"])
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid token subject")
+
+    employee = db.query(Employee).filter_by(public_id=employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return EmployeeOut.model_validate(employee)
+
+
+# ───────────────────────────────────────────────────────────────
+@router.post("/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+# @limiter.limit("5/minute")
+def login(
+    request: Request,
+    response: Response,
+    data: LoginPayload,
+    db: Session = Depends(get_db),
+):
+    employee = db.query(Employee).filter_by(username=data.username).first()
+
+    if not employee:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(data.password, employee.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token = create_token(employee.public_id)
+    refresh_token = create_refresh_token(employee.public_id)
+    set_refresh_token(response, refresh_token)
+
+    return AuthResponse(
+        access_token=access_token,
+        employee=EmployeeOut.model_validate(employee)
     )
 
 
-@router.get("/access-gate/attempts")
-@limiter.exempt
-def get_attempts(request: Request, payload: dict = Depends(verify_token)):
-    auth0_id = payload["sub"]
+# ───────────────────────────────────────────────────────────────
+@router.put("/signup", response_model=AuthResponse)
+def signup(
+    data: EmployeePut,
+    onboarding_token: str = Header(..., alias="Onboarding-Token"),
+    db: Session = Depends(get_db),
+    response: Response = None
+):
+    payload = decode_token(onboarding_token)
 
-    storage = limiter.limiter.storage
-    rate_limiter = FixedWindowRateLimiter(storage)
+    if payload.get("purpose") != "onboarding":
+        raise HTTPException(status_code=403, detail="Invalid onboarding token")
 
-    limits = parse_many("5/minute;10/hour")
-    attempt_info = []
+    if payload.get("sub") != data.email:
+        raise HTTPException(status_code=403, detail="Token/email mismatch")
 
-    for limit in limits:
-        key = f"rate-limit:{auth0_id}"  # ✅ Use your own key structure
-        reset_ts, remaining = rate_limiter.get_window_stats(limit, key)
-        reset_time = datetime.fromtimestamp(reset_ts, tz=timezone.utc).isoformat()
+    employee = db.query(Employee).filter_by(email=data.email).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        attempt_info.append({
-            "limit": str(limit),  # e.g., "5 per 1 minute"
-            "remaining": remaining,
-            "reset": reset_time
-        })
+    if employee.username and employee.password:
+        raise HTTPException(status_code=400, detail="User already onboarded")
 
-    return {"employee": auth0_id, "limits": attempt_info}
+    if data.username:
+        employee.username = data.username
+
+    if data.password:
+        employee.password = hash_password(data.password)
+
+    if data.phone_number:
+        employee.phone_number = data.phone_number.model_dump()
+
+    job_data = data.job_position
+    if job_data:
+        new_job = JobPosition(
+            title=job_data.title or "Untitled",
+            status=job_data.status or PositionEnum.ACTIVE,
+            description=job_data.description or "",
+            company_id=employee.company_id,
+        )
+        db.add(new_job)
+        db.flush()
+        employee.job_position_id = new_job.id
+
+    db.commit()
+    db.refresh(employee)
+
+    access_token = create_token(employee.public_id)
+    refresh_token = create_refresh_token(employee.public_id)
+    if response:
+        set_refresh_token(response, refresh_token)
+
+    return AuthResponse(
+        access_token=access_token,
+        employee=EmployeeOut.model_validate(employee)
+    )

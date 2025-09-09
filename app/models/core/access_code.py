@@ -15,10 +15,10 @@ class AccessCode(AbstractBaseModel, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true(), index=True
     )
-    company_id: Mapped[int] = mapped_column(
-        ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-    company: Mapped["Company"] = relationship(
-        "Company", back_populates="access_codes", passive_deletes=True, lazy="selectin"
-    )
+    # company_id: Mapped[int] = mapped_column(
+    #     ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
+    # )
+    #
+    # company: Mapped["Company"] = relationship(
+    #     "Company", back_populates="access_codes", passive_deletes=True, lazy="selectin"
+    # )

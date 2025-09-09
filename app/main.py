@@ -41,7 +41,7 @@ def setup_middlewares(app: FastAPI) -> None:
 
 
 def setup_routers(app: FastAPI) -> None:
-    app.include_router(auth.router, prefix="/api/user", tags=["User"])
+    app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
     app.include_router(recruiter.router, prefix="/api/recruiter", tags=["Recruiter"])
     app.include_router(view_applicaiton.router, prefix="/api/application", tags=["View Application"])
     # app.include_router(interviews.router, prefix="/interviews", tags=["Interviews"])
@@ -69,6 +69,11 @@ def on_startup():
 @app.on_event("shutdown")
 def on_shutdown():
     print(f"{APP_NAME} shutdown complete")
+
+
+@app.get("/")
+def root():
+    return {"message": "API is running!"}
 
 
 setup_middlewares(app)

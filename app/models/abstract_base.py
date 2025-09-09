@@ -1,7 +1,7 @@
 import uuid
 from sqlalchemy.orm import declarative_mixin, Mapped, mapped_column
 from sqlalchemy import Integer, DateTime, UUID
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 
 @declarative_mixin
@@ -13,11 +13,11 @@ class AbstractBaseModel:
         UUID(as_uuid=True), default=uuid.uuid4, unique=True, index=True, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )

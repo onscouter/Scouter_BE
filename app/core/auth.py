@@ -1,88 +1,99 @@
-# src/core/auth.py
-from fastapi import Depends, HTTPException, status, Request
+import os
+from uuid import UUID
+from typing import Any
+
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
+
+from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
-from dotenv import load_dotenv
-import requests
-import os
 
 load_dotenv()
 
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
-AUTH0_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE")
-ALGORITHMS = ["RS256"]
-JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
-
 security = HTTPBearer()
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
-def get_jwks():
-    resp = requests.get(JWKS_URL)
-    if resp.status_code != 200:
-        raise Exception("Failed to fetch JWKS")
-    return resp.json()
+# ─── Token Creation ────────────────────────────────────────
+def create_token(
+    sub: str | UUID,
+    expires_in_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES,
+    extra: dict[str, Any] = None,
+) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=expires_in_minutes)
+    payload: dict[str, Any] = {
+        "sub": str(sub),
+        "exp": int(expire.timestamp()),
+        "iat": int(datetime.utcnow().timestamp()),
+    }
+    if extra:
+        payload.update(extra)
+
+    if not SECRET_KEY:
+        raise RuntimeError("SECRET_KEY is not set. Check your .env or environment.")
+
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_rsa_key(token: str):
-    jwks = get_jwks()
-    unverified_header = jwt.get_unverified_header(token)
-
-    if "kid" not in unverified_header:
-        raise HTTPException(status_code=401, detail="Malformed token header")
-
-    for key in jwks["keys"]:
-        if key["kid"] == unverified_header["kid"]:
-            return {
-                "kty": key["kty"],
-                "kid": key["kid"],
-                "use": key["use"],
-                "n": key["n"],
-                "e": key["e"],
-            }
-
-    raise HTTPException(status_code=401, detail="Public key not found")
+def create_onboarding_token(email: str) -> str:
+    return create_token(
+        sub=email,
+        expires_in_minutes=15,
+        extra={"purpose": "onboarding"}
+    )
 
 
-# The reusable core decoder
-def decode_token(token: str):
-    rsa_key = get_rsa_key(token)
+def create_refresh_token(sub: str | UUID) -> str:
+    return create_token(
+        sub=sub,
+        expires_in_minutes=60 * 24 * REFRESH_TOKEN_EXPIRE_DAYS,
+        extra={"purpose": "refresh"}
+    )
+
+
+# ─── Token Decoding / Verification ─────────────────────────
+def decode_token(token: str) -> dict:
     try:
-        payload = jwt.decode(
-            token,
-            rsa_key,
-            algorithms=ALGORITHMS,
-            audience=AUTH0_AUDIENCE,
-            issuer=f"https://{AUTH0_DOMAIN}/",
-        )
-        return payload
-    except JWTError as e:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
 
 
-# Dependency for FastAPI routes
-def verify_token(
-        credentials: HTTPAuthorizationCredentials = Depends(security),
-):
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     return decode_token(credentials.credentials)
 
 
-# Manual extractor for middleware
-def verify_token_from_request(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or malformed Authorization header")
-
-    token = auth_header.removeprefix("Bearer ").strip()
-    return decode_token(token)
-
-
-def get_auth0_id(request: Request) -> str:
+def get_user_id(request: Request) -> str:
     try:
-        payload = verify_token_from_request(request)
-        identity = payload.get("sub", "anonymous")
-        return identity
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise ValueError
+        token = auth_header.removeprefix("Bearer ").strip()
+        payload = decode_token(token)
+        return payload.get("sub", "anonymous")
     except Exception:
         return "anonymous"
+
+
+# ─── Response Cookie Helpers ───────────────────────────────
+def set_refresh_token(response: Response, token: str) -> None:
+    response.set_cookie(
+        key="refresh_token",
+        value=token,
+        httponly=True,
+        secure=True,  # Set False for local dev if needed
+        samesite="strict",
+        max_age=60 * 60 * 24 * REFRESH_TOKEN_EXPIRE_DAYS,
+        path="/",
+    )
+
+
+def clear_refresh_token(response: Response) -> None:
+    response.delete_cookie("refresh_token")
