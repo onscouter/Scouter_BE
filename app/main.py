@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api.routes import auth, recruiter, view_applicaiton
+from app.api.routes import auth, recruiter
 from app.db.session import engine
 from app.models import base
 from app.rate_limiter import limiter
@@ -43,7 +43,7 @@ def setup_middlewares(app: FastAPI) -> None:
 def setup_routers(app: FastAPI) -> None:
     app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
     app.include_router(recruiter.router, prefix="/api/recruiter", tags=["Recruiter"])
-    app.include_router(view_applicaiton.router, prefix="/api/application", tags=["View Application"])
+    # app.include_router(view_applicaiton.router, prefix="/api/application", tags=["View Application"])
     # app.include_router(interviews.router, prefix="/interviews", tags=["Interviews"])
 
 

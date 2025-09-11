@@ -1,9 +1,8 @@
 from __future__ import annotations
 import enum
-from datetime import datetime, UTC
 from typing import List
 
-from sqlalchemy import ForeignKey, DateTime, Enum, Integer, text
+from sqlalchemy import ForeignKey, Enum, Integer, text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from app.models.abstract_base import AbstractBaseModel
