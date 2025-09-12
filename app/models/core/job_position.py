@@ -13,6 +13,12 @@ class PositionEnum(str, Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class JobType(str, Enum):
+    EXTERNAL = "EXTERNAL"
+    INTERNAL = "INTERNAL"
 
 
 class JobPosition(AbstractBaseModel, Base):
@@ -27,7 +33,11 @@ class JobPosition(AbstractBaseModel, Base):
         index=True,
     )
     description: Mapped[str] = mapped_column(String, nullable=False)
-
+    job_type: Mapped[JobType] = mapped_column(
+        SqlEnum(JobType, name="job_position_type"),
+        nullable=False,
+        index=True,
+    )
     company_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("companies.id", ondelete="CASCADE"),

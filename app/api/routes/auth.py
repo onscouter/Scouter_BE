@@ -14,7 +14,7 @@ from app.core.auth import (
 from app.core.security import verify_password, hash_password
 from app.db.init_db import get_db
 from app.models import Employee, JobPosition
-from app.models.core.job_position import PositionEnum
+from app.models.core.job_position import PositionEnum, JobType
 from app.rate_limiter import limiter
 from limits.strategies import FixedWindowRateLimiter
 from app.schemas.login import LoginPayload, AuthResponse
@@ -26,7 +26,6 @@ storage = limiter.limiter.storage
 rate_limiter = FixedWindowRateLimiter(storage)
 
 
-# ───────────────────────────────────────────────────────────────
 @router.post("/refresh")
 def refresh_token(request: Request, response: Response, db=Depends(get_db)):
     token = request.cookies.get("refresh_token")
@@ -55,7 +54,6 @@ def logout(response: Response):
     return {"detail": "Logged out"}
 
 
-# ───────────────────────────────────────────────────────────────
 @router.get("/me", response_model=EmployeeOut)
 def get_me(payload: dict = Depends(verify_token), db: Session = Depends(get_db)):
     try:
@@ -70,7 +68,6 @@ def get_me(payload: dict = Depends(verify_token), db: Session = Depends(get_db))
     return EmployeeOut.model_validate(employee)
 
 
-# ───────────────────────────────────────────────────────────────
 @router.post("/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
 # @limiter.limit("5/minute")
 def login(
@@ -97,7 +94,6 @@ def login(
     )
 
 
-# ───────────────────────────────────────────────────────────────
 @router.put("/signup", response_model=AuthResponse)
 def signup(
     data: EmployeePut,
@@ -133,9 +129,10 @@ def signup(
     if job_data:
         new_job = JobPosition(
             title=job_data.title or "Untitled",
-            status=job_data.status or PositionEnum.ACTIVE,
+            status=PositionEnum.UNAVAILABLE,
             description=job_data.description or "",
             company_id=employee.company_id,
+            job_type=JobType.INTERNAL,
         )
         db.add(new_job)
         db.flush()

@@ -19,6 +19,7 @@ from app.models import (
 from app.models.core.job_position import PositionEnum
 from app.schemas.job import PaginatedJobResponse, JobOut
 from app.schemas.job_application import PaginatedApplicationsResponse, ApplicationOut
+from app.schemas.success_response import SuccessResponse
 
 router = APIRouter()
 
@@ -29,6 +30,29 @@ ALLOWED_ORDER_DIRS = {"asc", "desc"}
 ALLOWED_JOB_STATUSES = {"ACTIVE", "PAUSED", "COMPLETED"}
 DEFAULT_ORDER_BY = "created_at"
 DEFAULT_ORDER_DIR = "desc"
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job(
+        job_id: str,
+        payload: dict = Depends(verify_token),
+        db: Session = Depends(get_db)
+):
+    employee_id = payload["sub"]
+    employee = db.query(Employee).filter_by(public_id=employee_id).first()
+
+    job = db.query(JobPosition).filter_by(public_id=job_id).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    if not employee or employee.company_id != job.company_id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to company data")
+
+    db.delete(job)
+    db.commit()
+
+    return SuccessResponse(success=True, message=f"Job {job_id} deleted")
 
 
 @router.get("/jobs", response_model=PaginatedJobResponse)

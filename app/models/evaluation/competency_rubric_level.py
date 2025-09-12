@@ -22,7 +22,6 @@ class CompetencyRubricLevel(AbstractBaseModel, Base):
     level: Mapped[RubricScoreLevel] = mapped_column(
         SqlEnum(RubricScoreLevel, name="rubric_score_level_enum"), nullable=False
     )
-    label: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
 
     competency_id: Mapped[int] = mapped_column(
