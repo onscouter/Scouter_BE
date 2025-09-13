@@ -34,7 +34,6 @@ class JobInterview(AbstractBaseModel, Base):
         index=True,
     )
     score: Mapped[int] = mapped_column(nullable=True)
-    outcome: Mapped[str] = mapped_column(nullable=True)
 
     application_id: Mapped[int] = mapped_column(
         Integer,

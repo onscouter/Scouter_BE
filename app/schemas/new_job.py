@@ -8,12 +8,13 @@ class Indicator(BaseModel):
 
 
 class EvaluationCriterion(BaseModel):
+
     score: int
     description: str
     indicators: List[Indicator]
 
 
-class InterviewQuestion(BaseModel):
+class Questions(BaseModel):
     id: str
     text: str
     type: str
@@ -24,7 +25,7 @@ class RubricBlock(BaseModel):
     competencyName: str
     description: str
     criteria: List[EvaluationCriterion]
-    questions: List[InterviewQuestion]
+    questions: List[Questions]
 
 
 class NewJobPayload(BaseModel):

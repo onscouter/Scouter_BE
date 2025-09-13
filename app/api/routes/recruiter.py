@@ -18,7 +18,7 @@ from app.models import (
 )
 from app.models.core.job_position import PositionEnum
 from app.schemas.job import PaginatedJobResponse, JobOut
-from app.schemas.job_application import PaginatedApplicationsResponse, ApplicationOut
+from app.schemas.job_application import PaginatedApplicationResponse, ApplicationOut
 from app.schemas.success_response import SuccessResponse
 
 router = APIRouter()
@@ -32,7 +32,7 @@ DEFAULT_ORDER_BY = "created_at"
 DEFAULT_ORDER_DIR = "desc"
 
 
-@router.delete("/jobs/{job_id}")
+@router.delete("/{job_id}")
 def delete_job(
         job_id: str,
         payload: dict = Depends(verify_token),
@@ -126,22 +126,15 @@ def get_jobs(
     total = query.count()
     results = query.offset((page - 1) * limit).limit(limit).all()
 
-    jobs = [
-        JobOut(
-            job_position_public_id=public_id,
-            title=title,
-            status=status,
-            created_at=created_at,
-            job_applications=apps,
-            competencies=comps,
-        )
-        for (public_id, title, status, created_at, apps, comps) in results
-    ]
-
-    return PaginatedJobResponse(jobs=jobs, total=total, page=page, limit=limit)
+    return PaginatedJobResponse(
+        jobs=[JobOut.model_validate(i) for i in results],
+        total=total,
+        page=page,
+        limit=limit,
+    )
 
 
-@router.get("/{job_position_public_id}", response_model=PaginatedApplicationsResponse)
+@router.get("/{job_position_public_id}", response_model=PaginatedApplicationResponse)
 def get_applications_for_job_position(
         job_position_public_id: UUID,
         db: Session = Depends(get_db),
@@ -216,9 +209,16 @@ def get_applications_for_job_position(
         for app in apps
     ]
 
-    return PaginatedApplicationsResponse(
+    return PaginatedApplicationResponse(
         applications=response,
         total=total,
         page=page,
         limit=limit,
     )
+
+    # return PaginatedApplicationsResponse(
+    #     applications=[ApplicationOut.model_validate(i) for i in apps],
+    #     total=total,
+    #     page=page,
+    #     limit=limit,
+    # )

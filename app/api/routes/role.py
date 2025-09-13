@@ -1,6 +1,8 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.db.init_db import get_db
 from app.core.auth import verify_token
 from app.models import (
@@ -10,12 +12,12 @@ from app.models import (
     Competency,
     CompetencyRubricLevel,
     EvaluationIndicator,
-    InterviewQuestion,
     JobType,
+    InterviewQuestion,
     RubricScoreLevel,
     TypeLabel,
 )
-from app.schemas.new_job import NewJobPayload
+from app.schemas.new_job import NewJobPayload, Questions, EvaluationCriterion, RubricBlock, Indicator
 from app.schemas.success_response import SuccessResponse
 
 router = APIRouter()
@@ -98,3 +100,78 @@ def new_role(
 
     return SuccessResponse(success=True, message=f"Role created {job.public_id}.")
 
+
+@router.get("/{role_id}", response_model=NewJobPayload)
+def get_role(
+    role_id: str,
+    token: dict = Depends(verify_token),
+    db: Session = Depends(get_db),
+):
+    employee_id = token["sub"]
+
+    employee = db.query(Employee).filter_by(public_id=employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Authenticated user not found")
+
+    job_position = (
+        db.query(JobPosition)
+        .filter_by(public_id=role_id)
+        .options(
+            joinedload(JobPosition.competencies)
+            .joinedload(Competency.rubric_levels)
+            .joinedload(CompetencyRubricLevel.indicators),
+            joinedload(JobPosition.competencies)
+            .joinedload(Competency.interview_questions)
+        )
+        .first()
+    )
+
+    if not job_position:
+        raise HTTPException(status_code=404, detail="Job position not found")
+
+    if job_position.company_id != employee.company_id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to company data")
+
+    rubric_blocks = []
+
+    for competency in job_position.competencies:
+        # Build rubric criteria
+        criteria: List[EvaluationCriterion] = []
+        for level in competency.rubric_levels:
+            indicators = [
+                Indicator(competencyId=str(competency.public_id), text=i.indicator_text)
+                for i in level.indicators
+            ]
+            criteria.append(
+                EvaluationCriterion(
+                    score=level.level.value,
+                    description=level.description,
+                    indicators=indicators
+                )
+            )
+
+        # Build interview questions
+        questions = [
+            Questions(
+                id=str(q.public_id),
+                text=q.question_text,
+                type=q.type
+            )
+            for q in competency.interview_questions
+        ]
+
+        rubric_blocks.append(
+            RubricBlock(
+                competencyId=str(competency.public_id),
+                competencyName=competency.name,
+                description=competency.description,
+                criteria=criteria,
+                questions=questions
+            )
+        )
+
+    return NewJobPayload(
+        title=job_position.title,
+        description=job_position.description,
+        rubric=rubric_blocks
+    )
