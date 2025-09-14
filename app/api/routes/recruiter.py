@@ -14,7 +14,7 @@ from app.models import (
     JobApplication,
     Competency,
     JobInterview,
-    Candidate, PhoneNumber,
+    Candidate, PhoneNumber, InterviewStatusEnum,
 )
 from app.models.core.job_position import PositionEnum
 from app.schemas.job import PaginatedJobResponse, JobOut
@@ -226,16 +226,15 @@ def get_applications_for_job_position(
 
 @router.post("/{job_position_public_id}/new-candidate", response_model=SuccessResponse)
 def create_candidate_for_job_position(
-    job_position_public_id: UUID,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(verify_token),
-    first_name: str = Form(...),
-    last_name: str = Form(...),
-    email: str = Form(...),
-    phone_number_raw: str = Form(...),
-    phone_country_code: str = Form(...),
+        job_position_public_id: UUID,
+        db: Session = Depends(get_db),
+        payload: dict = Depends(verify_token),
+        first_name: str = Form(...),
+        last_name: str = Form(...),
+        email: str = Form(...),
+        phone_number_raw: str = Form(...),
+        phone_country_code: str = Form(...),
 ):
-
     employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
     if not employee:
         raise HTTPException(status_code=403, detail="Recruiter not found")
@@ -260,12 +259,63 @@ def create_candidate_for_job_position(
     db.add(candidate)
     db.flush()
 
+    competencies = job_position.competencies
+
     application = JobApplication(
         candidate_id=candidate.id,
         job_position_id=job_position.id,
     )
     db.add(application)
+    db.flush()
+
+    for competency in competencies:
+        interview = JobInterview(
+            application_id=application.id,
+            competency_id=competency.id,
+            interview_status=InterviewStatusEnum.NOT_SCHEDULED,
+
+        )
+        db.add(interview)
 
     db.commit()
 
     return SuccessResponse(success=True, message=f"Candidate created: {candidate.public_id}")
+
+
+@router.delete("/{job_position_id}/{candidate_id}")
+def delete_candidate_from_job(
+    job_position_id: str,
+    candidate_id: str,
+    payload: dict = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    employee_id = payload["sub"]
+    employee = db.query(Employee).filter_by(public_id=employee_id).first()
+
+    if not employee:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    candidate = db.query(Candidate).filter_by(public_id=candidate_id).first()
+    job_position = db.query(JobPosition).filter_by(public_id=job_position_id).first()
+
+    if not candidate or not job_position:
+        raise HTTPException(status_code=404, detail="Candidate or job not found")
+
+    application = (
+        db.query(JobApplication)
+        .filter_by(candidate_id=candidate.id, job_position_id=job_position.id)
+        .first()
+    )
+
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Job application not found for this candidate and job",
+        )
+
+    db.query(JobInterview).filter_by(application_id=application.id).delete()
+
+    db.delete(application)
+    db.commit()
+
+    return SuccessResponse(success=True, message="Candidate removed from job")

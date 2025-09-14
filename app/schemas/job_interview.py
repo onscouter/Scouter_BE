@@ -12,7 +12,7 @@ from app.schemas.job import JobMinimal
 
 class InterviewBase(BaseModel):
     competency: CompetencyMinimal
-    interview_datetime: datetime
+    interview_datetime: Optional[datetime] = None
     public_id: UUID = Field(alias="job_interview_public_id")
     interview_status: InterviewStatusEnum
 

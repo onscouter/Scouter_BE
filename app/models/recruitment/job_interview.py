@@ -24,7 +24,7 @@ class JobInterview(AbstractBaseModel, Base):
     __tablename__ = "job_interviews"
 
     interview_datetime: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        DateTime(timezone=True), nullable=True, index=True
     )
     interview_status: Mapped[InterviewStatusEnum] = mapped_column(
         SqlEnum(InterviewStatusEnum, name="interview_status_enum", create_type=True),
@@ -44,7 +44,7 @@ class JobInterview(AbstractBaseModel, Base):
     interviewer_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("employees.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     competency_id: Mapped[int] = mapped_column(
