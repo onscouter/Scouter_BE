@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from sqlalchemy import asc, desc, func, distinct, literal
 from sqlalchemy.orm import Session, joinedload
 
@@ -14,7 +14,7 @@ from app.models import (
     JobApplication,
     Competency,
     JobInterview,
-    Candidate,
+    Candidate, PhoneNumber,
 )
 from app.models.core.job_position import PositionEnum
 from app.schemas.job import PaginatedJobResponse, JobOut
@@ -222,3 +222,50 @@ def get_applications_for_job_position(
     #     page=page,
     #     limit=limit,
     # )
+
+
+@router.post("/{job_position_public_id}/new-candidate", response_model=SuccessResponse)
+def create_candidate_for_job_position(
+    job_position_public_id: UUID,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(verify_token),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    phone_number_raw: str = Form(...),
+    phone_country_code: str = Form(...),
+):
+
+    employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
+    if not employee:
+        raise HTTPException(status_code=403, detail="Recruiter not found")
+
+    job_position = db.query(JobPosition).filter_by(public_id=job_position_public_id).first()
+    if not job_position:
+        raise HTTPException(status_code=404, detail="Job position not found")
+
+    if job_position.company_id != employee.company_id:
+        raise HTTPException(status_code=403, detail="Unauthorized access")
+
+    # existing_candidate = db.query(Candidate).filter_by(email=email).first()
+    # if existing_candidate:
+    #     raise HTTPException(status_code=400, detail="Candidate with this email already exists.")
+
+    candidate = Candidate(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone_number=PhoneNumber(number=phone_number_raw, country_code=phone_country_code)
+    )
+    db.add(candidate)
+    db.flush()
+
+    application = JobApplication(
+        candidate_id=candidate.id,
+        job_position_id=job_position.id,
+    )
+    db.add(application)
+
+    db.commit()
+
+    return SuccessResponse(success=True, message=f"Candidate created: {candidate.public_id}")
