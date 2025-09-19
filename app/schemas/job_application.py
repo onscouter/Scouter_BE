@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, ConfigDict
 from app.schemas.candidate import CandidateOut
+from app.schemas.job import JobMinimal
 from app.schemas.job_interview import InterviewOut
 
 
@@ -17,7 +18,6 @@ class ApplicationOut(ApplicationBase):
     created_at: datetime
     interviews: List[InterviewOut]
     status: str
-    job_position_title: str
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -27,6 +27,7 @@ class ApplicationOut(ApplicationBase):
 
 class PaginatedApplicationResponse(BaseModel):
     applications: List[ApplicationOut]
+    job_position: JobMinimal
     total: int
     page: int
     limit: int

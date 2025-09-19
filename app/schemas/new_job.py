@@ -1,34 +1,12 @@
-from pydantic import BaseModel
 from typing import List
+from uuid import UUID
 
+from pydantic import BaseModel, Field, ConfigDict
 
-class Indicator(BaseModel):
-    competencyId: str
-    text: str
-
-
-class EvaluationCriterion(BaseModel):
-
-    score: int
-    description: str
-    indicators: List[Indicator]
-
-
-class Questions(BaseModel):
-    id: str
-    text: str
-    type: str
-
-
-class RubricBlock(BaseModel):
-    competencyId: str
-    competencyName: str
-    description: str
-    criteria: List[EvaluationCriterion]
-    questions: List[Questions]
+from app.schemas.competency import CompetencyOut
 
 
 class NewJobPayload(BaseModel):
     title: str
     description: str
-    rubric: List[RubricBlock]
+    competencies: List[CompetencyOut]

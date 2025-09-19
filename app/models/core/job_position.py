@@ -32,7 +32,7 @@ class JobPosition(AbstractBaseModel, Base):
         server_default=text("'ACTIVE'"),
         index=True,
     )
-    description: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=True)
     job_type: Mapped[JobType] = mapped_column(
         SqlEnum(JobType, name="job_position_type"),
         nullable=False,

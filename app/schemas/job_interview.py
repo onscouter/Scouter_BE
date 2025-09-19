@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, ConfigDict
 from app.models.recruitment.job_interview import InterviewStatusEnum
 from app.schemas.candidate import CandidateMinimal
 from app.schemas.competency import CompetencyMinimal
-from app.schemas.job import JobMinimal
 
 
 class InterviewBase(BaseModel):
@@ -27,7 +26,6 @@ class InterviewOut(InterviewBase):
 
 
 class InterviewerOut(InterviewBase):
-    job_position: JobMinimal
     candidate: CandidateMinimal
 
 

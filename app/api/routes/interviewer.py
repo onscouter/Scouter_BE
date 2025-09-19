@@ -18,7 +18,7 @@ from app.models import (
 )
 from app.models.core.job_position import PositionEnum
 from app.schemas.job_application import PaginatedApplicationResponse
-from app.schemas.job_interview import PaginatedInterviewResponse, InterviewerOut
+from app.schemas.job_interview import PaginatedInterviewResponse, InterviewOut
 from app.schemas.success_response import SuccessResponse
 
 router = APIRouter()
@@ -112,7 +112,7 @@ def get_jobs(
     results = query.offset((page - 1) * limit).limit(limit).all()
 
     interviews = [
-        InterviewerOut(
+        InterviewOut(
             public_id=i.public_id,
             interview_datetime=i.interview_datetime,
             interview_status=i.interview_status,

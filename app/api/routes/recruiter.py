@@ -17,7 +17,7 @@ from app.models import (
     Candidate, PhoneNumber, InterviewStatusEnum,
 )
 from app.models.core.job_position import PositionEnum
-from app.schemas.job import PaginatedJobResponse, JobOut
+from app.schemas.job import PaginatedJobResponse, JobOut, JobMinimal
 from app.schemas.job_application import PaginatedApplicationResponse, ApplicationOut
 from app.schemas.success_response import SuccessResponse
 
@@ -58,7 +58,7 @@ def delete_job(
 @router.get("/jobs", response_model=PaginatedJobResponse)
 def get_jobs(
         payload: dict = Depends(verify_token),
-        company_id: str = Query(..., description="Public ID of the company"),
+        company_public_id: str = Query(..., description="Public ID of the company"),
         page: int = Query(1, ge=1),
         limit: int = Query(10, ge=1),
         job_status: Optional[str] = Query(None),
@@ -69,10 +69,10 @@ def get_jobs(
 ):
     # Validate auth and ownership
     employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
-    company = db.query(Company).filter_by(public_id=company_id).first()
+    company = db.query(Company).filter_by(public_id=company_public_id).first()
 
     if not company:
-        raise HTTPException(status_code=404, detail=f"Company {company_id} not found")
+        raise HTTPException(status_code=404, detail=f"Company {company_public_id} not found")
     if not employee or employee.company_id != company.id:
         raise HTTPException(status_code=403, detail="Unauthorized access to company data")
 
@@ -93,6 +93,7 @@ def get_jobs(
             JobPosition.title,
             JobPosition.status,
             JobPosition.created_at,
+            JobPosition.description,
             job_app_count,
             competency_count,
         )
@@ -145,7 +146,7 @@ def get_applications_for_job_position(
         order_by: str = Query(DEFAULT_ORDER_BY),
         order: str = Query(DEFAULT_ORDER_DIR),
 ):
-    # Validate recruiter
+    # Validate
     employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
     if not employee:
         raise HTTPException(status_code=403, detail="Recruiter not found")
@@ -168,8 +169,9 @@ def get_applications_for_job_position(
         .join(JobApplication.candidate)
         .options(
             joinedload(JobApplication.candidate),
-            joinedload(JobApplication.interviews).joinedload(JobInterview.competency),
             joinedload(JobApplication.job_position),
+            joinedload(JobApplication.interviews)
+            .joinedload(JobInterview.competency),
         )
     )
 
@@ -197,31 +199,13 @@ def get_applications_for_job_position(
     total = query.count()
     apps = query.offset((page - 1) * limit).limit(limit).all()
 
-    response = [
-        ApplicationOut(
-            public_id=app.public_id,
-            candidate=app.candidate,
-            created_at=app.created_at,
-            interviews=app.interviews,
-            status=app.status,
-            job_position_title=app.job_position.title,
-        )
-        for app in apps
-    ]
-
     return PaginatedApplicationResponse(
-        applications=response,
+        applications=[ApplicationOut.model_validate(i) for i in apps],
+        job_position=JobMinimal.model_validate(job_position),
         total=total,
         page=page,
         limit=limit,
     )
-
-    # return PaginatedApplicationsResponse(
-    #     applications=[ApplicationOut.model_validate(i) for i in apps],
-    #     total=total,
-    #     page=page,
-    #     limit=limit,
-    # )
 
 
 @router.post("/{job_position_public_id}/new-candidate", response_model=SuccessResponse)
@@ -282,12 +266,12 @@ def create_candidate_for_job_position(
     return SuccessResponse(success=True, message=f"Candidate created: {candidate.public_id}")
 
 
-@router.delete("/{job_position_id}/{candidate_id}")
+@router.delete("/{job_position_public_id}/{candidate_public_id}", response_model=SuccessResponse)
 def delete_candidate_from_job(
-    job_position_id: str,
-    candidate_id: str,
-    payload: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+        job_position_public_id: str,
+        candidate_public_id: str,
+        payload: dict = Depends(verify_token),
+        db: Session = Depends(get_db)
 ):
     employee_id = payload["sub"]
     employee = db.query(Employee).filter_by(public_id=employee_id).first()
@@ -295,8 +279,8 @@ def delete_candidate_from_job(
     if not employee:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    candidate = db.query(Candidate).filter_by(public_id=candidate_id).first()
-    job_position = db.query(JobPosition).filter_by(public_id=job_position_id).first()
+    candidate = db.query(Candidate).filter_by(public_id=candidate_public_id).first()
+    job_position = db.query(JobPosition).filter_by(public_id=job_position_public_id).first()
 
     if not candidate or not job_position:
         raise HTTPException(status_code=404, detail="Candidate or job not found")

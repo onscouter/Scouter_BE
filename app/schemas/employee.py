@@ -5,7 +5,7 @@ from uuid import UUID
 from datetime import datetime
 from app.models.core.employee import RoleEnum
 from .company import CompanyOut
-from .job import JobPut
+from .job import JobPut, JobMinimal
 from .phone_number import PhoneNumberOut
 
 
@@ -34,7 +34,7 @@ class EmployeePut(BaseModel):
 # Full response
 class EmployeeOut(EmployeeBase):
     username: str
-    job_position_id: int
+    job_position: JobMinimal
     phone_number: PhoneNumberOut
     company: CompanyOut
     created_at: datetime
@@ -44,8 +44,6 @@ class EmployeeOut(EmployeeBase):
 
 # Minimal response
 class EmployeeMinimal(BaseModel):
-    public_id: UUID = Field(alias="employee_public_id")
-    full_name: str
 
     model_config = {
         "from_attributes": True,

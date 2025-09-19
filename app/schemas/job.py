@@ -9,6 +9,7 @@ from app.models.core.job_position import PositionEnum
 class JobBase(BaseModel):
     title: str
     status: PositionEnum
+    description: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
 

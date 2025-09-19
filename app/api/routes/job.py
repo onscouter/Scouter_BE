@@ -17,14 +17,16 @@ from app.models import (
     RubricScoreLevel,
     TypeLabel,
 )
-from app.schemas.new_job import NewJobPayload, Questions, EvaluationCriterion, RubricBlock, Indicator
+from app.schemas.competency import CompetencyOut
+from app.schemas.new_job import NewJobPayload
+from app.schemas.rubric import Questions, Indicator, RubricLevel
 from app.schemas.success_response import SuccessResponse
 
 router = APIRouter()
 
 
-@router.post("/new-role", response_model=SuccessResponse)
-def new_role(
+@router.post("/new-job", response_model=SuccessResponse)
+def new_job(
         payload: NewJobPayload,
         token: dict = Depends(verify_token),
         db: Session = Depends(get_db)
@@ -48,11 +50,11 @@ def new_role(
     db.add(job)
     db.flush()
 
-    for block in payload.rubric:
-        competency = db.query(Competency).filter_by(name=block.competencyName).first()
+    for block in payload.competencies:
+        competency = db.query(Competency).filter_by(name=block.name).first()
         if not competency:
             competency = Competency(
-                name=block.competencyName,
+                name=block.name,
                 description=block.description
             )
             db.add(competency)
@@ -60,21 +62,21 @@ def new_role(
 
         job.competencies.append(competency)
 
-        for criterion in block.criteria:
+        for rubric_level in block.rubric_levels:
             try:
-                score_level = RubricScoreLevel(criterion.score)
+                score_level = RubricScoreLevel(rubric_level.level)
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid rubric score: {criterion.score}")
 
             rubric_level = CompetencyRubricLevel(
                 competency_id=competency.id,
                 level=score_level,
-                description=criterion.description
+                description=rubric_level.description
             )
             db.add(rubric_level)
             db.flush()
 
-            for indicator in criterion.indicators:
+            for indicator in rubric_level.indicators:
                 db.add(EvaluationIndicator(
                     rubric_level_id=rubric_level.id,
                     indicator_text=indicator.text
@@ -98,12 +100,12 @@ def new_role(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    return SuccessResponse(success=True, message=f"Role created {job.public_id}.")
+    return SuccessResponse(success=True, message=f"Job created {job.public_id}.")
 
 
-@router.put("/{role_id}", response_model=SuccessResponse)
-def update_role(
-        role_id: str,
+@router.put("/{job_position_public_id}", response_model=SuccessResponse)
+def update_job(
+        job_position_public_id: str,
         payload: NewJobPayload,
         token: dict = Depends(verify_token),
         db: Session = Depends(get_db)
@@ -114,7 +116,7 @@ def update_role(
     if not employee:
         raise HTTPException(status_code=404, detail="Authenticated user not found")
 
-    job = db.query(JobPosition).filter_by(public_id=role_id).first()
+    job = db.query(JobPosition).filter_by(public_id=job_position_public_id).first()
     if not job or job.company_id != employee.company_id:
         raise HTTPException(status_code=404, detail="Job not found or unauthorized")
 
@@ -122,21 +124,20 @@ def update_role(
     job.description = payload.description
 
     for competency in job.competencies:
-
         rubric_levels = db.query(CompetencyRubricLevel).filter_by(competency_id=competency.id).all()
         for level in rubric_levels:
             db.query(EvaluationIndicator).filter_by(rubric_level_id=level.id).delete()
-        db.query(CompetencyRubricLevel).filter_by(competency_id=competency.id).delete()
 
+        db.query(CompetencyRubricLevel).filter_by(competency_id=competency.id).delete()
         db.query(InterviewQuestion).filter_by(competency_id=competency.id).delete()
 
     job.competencies.clear()
 
-    for block in payload.rubric:
-        competency = db.query(Competency).filter_by(name=block.competencyName).first()
+    for block in payload.competencies:
+        competency = db.query(Competency).filter_by(name=block.name).first()
         if not competency:
             competency = Competency(
-                name=block.competencyName,
+                name=block.name,
                 description=block.description
             )
             db.add(competency)
@@ -144,21 +145,21 @@ def update_role(
 
         job.competencies.append(competency)
 
-        for criterion in block.criteria:
+        for rubric_level in block.rubric_levels:
             try:
-                score_level = RubricScoreLevel(criterion.score)
+                score_level = RubricScoreLevel(rubric_level.level)
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid rubric score: {criterion.score}")
 
             rubric_level = CompetencyRubricLevel(
                 competency_id=competency.id,
                 level=score_level,
-                description=criterion.description
+                description=rubric_level.description
             )
             db.add(rubric_level)
             db.flush()
 
-            for indicator in criterion.indicators:
+            for indicator in rubric_level.indicators:
                 db.add(EvaluationIndicator(
                     rubric_level_id=rubric_level.id,
                     indicator_text=indicator.text
@@ -182,12 +183,12 @@ def update_role(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-    return SuccessResponse(success=True, message=f"Role updated: {job.public_id}")
+    return SuccessResponse(success=True, message=f"Job updated: {job.public_id}")
 
 
-@router.get("/{role_id}", response_model=NewJobPayload)
-def get_role(
-        role_id: str,
+@router.get("/{job_position_public_id}", response_model=NewJobPayload)
+def get_job(
+        job_position_public_id: str,
         token: dict = Depends(verify_token),
         db: Session = Depends(get_db),
 ):
@@ -199,7 +200,7 @@ def get_role(
 
     job_position = (
         db.query(JobPosition)
-        .filter_by(public_id=role_id)
+        .filter_by(public_id=job_position_public_id)
         .options(
             joinedload(JobPosition.competencies)
             .joinedload(Competency.rubric_levels)
@@ -216,40 +217,36 @@ def get_role(
     if job_position.company_id != employee.company_id:
         raise HTTPException(status_code=403, detail="Unauthorized access to company data")
 
-    rubric_blocks = []
+    competencies: List[CompetencyOut] = []
 
     for competency in job_position.competencies:
         # Build rubric criteria
-        criteria: List[EvaluationCriterion] = []
+        rubric_levels: List[RubricLevel] = []
         for level in competency.rubric_levels:
             indicators = [
-                Indicator(competencyId=str(competency.public_id), text=i.indicator_text)
+                Indicator(
+                    public_id=i.public_id,
+                    indicator_text=i.indicator_text
+                )
                 for i in level.indicators
             ]
-            criteria.append(
-                EvaluationCriterion(
-                    score=level.level.value,
+            rubric_levels.append(
+                RubricLevel(
+                    public_id=level.public_id,
+                    level=level.level.value,
                     description=level.description,
                     indicators=indicators
                 )
             )
 
-        # Build interview questions
-        questions = [
-            Questions(
-                id=str(q.public_id),
-                text=q.question_text,
-                type=q.type
-            )
-            for q in competency.interview_questions
-        ]
+        questions = [Questions.model_validate(q) for q in competency.interview_questions]
 
-        rubric_blocks.append(
-            RubricBlock(
-                competencyId=str(competency.public_id),
-                competencyName=competency.name,
+        competencies.append(
+            CompetencyOut(
+                public_id=competency.public_id,
+                name=competency.name,
                 description=competency.description,
-                criteria=criteria,
+                rubric_levels=rubric_levels,
                 questions=questions
             )
         )
@@ -257,5 +254,5 @@ def get_role(
     return NewJobPayload(
         title=job_position.title,
         description=job_position.description,
-        rubric=rubric_blocks
+        competencies=competencies
     )
