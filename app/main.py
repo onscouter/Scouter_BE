@@ -17,17 +17,20 @@ from app.rate_limiter import limiter
 API_PREFIX = "/api"
 APP_NAME = "Scouter Interview Assistant"
 APP_VERSION = "1.0.0"
+default_origins = ["http://localhost:5173"]
 
-# Create app
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
 
-# Attach limiter instance
 app.state.limiter = limiter
 
 
 def setup_middlewares(app: FastAPI) -> None:
     app.add_middleware(SlowAPIMiddleware)
-    allow_origins = os.getenv("FRONTEND_URLS", "").split(",")
+
+    frontend_url = os.getenv("FRONTEND_URL", "").strip()
+
+    allow_origins = default_origins + [frontend_url] if frontend_url else default_origins
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
@@ -38,7 +41,7 @@ def setup_middlewares(app: FastAPI) -> None:
 
     app.add_middleware(
         SessionMiddleware,
-        secret_key=os.getenv("SESSION_SECRET_KEY", "dev-secret"),  # default for dev
+        secret_key=os.getenv("SESSION_SECRET_KEY", "dev-secret"),
     )
 
 
@@ -91,6 +94,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "query_params": dict(request.query_params),
         },
     )
+
 
 setup_middlewares(app)
 setup_routers(app)
