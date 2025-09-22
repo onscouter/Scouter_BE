@@ -340,6 +340,12 @@ def get_applications_for_job_position(
             joinedload(JobApplication.job_position),
             joinedload(JobApplication.interviews)
             .joinedload(JobInterview.competency),
+            joinedload(JobApplication.interviews)
+            .joinedload(JobInterview.application)
+            .joinedload(JobApplication.candidate),
+            joinedload(JobApplication.interviews)
+            .joinedload(JobInterview.application)
+            .joinedload(JobApplication.job_position),
         )
     )
 
