@@ -27,10 +27,10 @@ app.state.limiter = limiter
 
 def setup_middlewares(app: FastAPI) -> None:
     app.add_middleware(SlowAPIMiddleware)
-
+    allow_origins = os.getenv("FRONTEND_URLS", "").split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173"), "https://scouter-fe-pi.vercel.app/"],
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
