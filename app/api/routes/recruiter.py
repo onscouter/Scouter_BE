@@ -18,7 +18,7 @@ from app.models import (
     Candidate, PhoneNumber, InterviewStatusEnum,
 )
 from app.models.core import RoleEnum
-from app.models.core.job_position import PositionEnum
+from app.models.core.job_position import PositionEnum, JobType
 from app.schemas.candidate import CandidateMinimal, CandidateOut
 from app.schemas.competency import CompetencyMinimal
 from app.schemas.job import PaginatedJobResponse, JobOut, JobMinimal
@@ -103,7 +103,9 @@ def get_jobs(
             job_app_count,
             competency_count,
         )
-        .filter(JobPosition.company_id == company.id)
+        .filter(JobPosition.company_id == company.id,
+                JobPosition.job_type == JobType.EXTERNAL
+                )
         .outerjoin(JobPosition.job_applications)
         .outerjoin(JobPosition.competencies)
         .group_by(JobPosition.id)
