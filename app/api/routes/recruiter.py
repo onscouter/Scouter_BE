@@ -19,11 +19,11 @@ from app.models import (
 )
 from app.models.core import RoleEnum
 from app.models.core.job_position import PositionEnum
-from app.schemas.candidate import CandidateMinimal
+from app.schemas.candidate import CandidateMinimal, CandidateOut
 from app.schemas.competency import CompetencyMinimal
 from app.schemas.job import PaginatedJobResponse, JobOut, JobMinimal
 from app.schemas.job_application import PaginatedApplicationResponse, ApplicationOut
-from app.schemas.job_interview import InterviewWithMeta
+from app.schemas.job_interview import InterviewWithMeta, InterviewOut
 from app.schemas.success_response import SuccessResponse
 from app.schemas.employee import PaginatedEmployeeResponse, EmployeeInterviewerOut, EmployeeOut
 
@@ -373,8 +373,34 @@ def get_applications_for_job_position(
     total = query.count()
     apps = query.offset((page - 1) * limit).limit(limit).all()
 
+    applications = []
+
+    for app in apps:
+        interviews = []
+
+        for i in app.interviews:
+            interviews.append(
+                InterviewOut(
+                    public_id=i.public_id,
+                    interview_datetime=i.interview_datetime,
+                    interview_status=i.interview_status,
+                    competency=CompetencyMinimal.model_validate(i.competency),
+                    candidate=CandidateMinimal.model_validate(i.application.candidate),
+                    job_position=JobMinimal.model_validate(i.application.job_position),
+                )
+            )
+
+        applications.append({
+            "public_id": app.public_id,
+            "created_at": app.created_at,
+            "status": app.status,
+            "candidate": CandidateOut.model_validate(app.candidate),
+            "job_position": JobMinimal.model_validate(app.job_position),
+            "interviews": interviews,
+        })
+
     return PaginatedApplicationResponse(
-        applications=[ApplicationOut.model_validate(i) for i in apps],
+        applications=applications,
         job_position=JobMinimal.model_validate(job_position),
         total=total,
         page=page,
