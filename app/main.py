@@ -1,10 +1,12 @@
 import os
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
 from app.api.routes import auth, recruiter, job, interviewer
 from app.db.session import engine
@@ -75,6 +77,20 @@ def on_shutdown():
 def root():
     return {"message": "API is running!"}
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print("Validation error caught!")
+    print("Details:", exc.errors())
+    print("Query params:", dict(request.query_params))
+    return JSONResponse(
+        status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": "Request validation failed",
+            "details": exc.errors(),
+            "query_params": dict(request.query_params),
+        },
+    )
 
 setup_middlewares(app)
 setup_routers(app)

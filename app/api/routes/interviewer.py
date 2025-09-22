@@ -1,29 +1,33 @@
 from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, desc, func, distinct, literal
+from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import verify_token
 from app.db.init_db import get_db
 from app.models import (
     JobPosition,
-    Company,
     Employee,
     JobApplication,
     Competency,
     JobInterview,
     Candidate,
 )
-from app.models.core.job_position import PositionEnum
-from app.schemas.job_application import PaginatedApplicationResponse
 from app.schemas.job_interview import PaginatedInterviewResponse, InterviewOut
 from app.schemas.success_response import SuccessResponse
 
 router = APIRouter()
 
-# Config
+
+EXCLUDED_STATUSES = {
+    "NOT_SCHEDULED",
+    "CANCELLED",
+    "COMPLETED",
+    "NO_SHOW",
+    "FEEDBACK_PENDING"
+}
+
 ALLOWED_INTERVIEW_ORDER_FIELDS = {"candidate", "role", "competency", "interview_datetime"}
 ALLOWED_ORDER_DIRS = {"asc", "desc"}
 DEFAULT_ORDER_BY = "interview_datetime"
@@ -54,18 +58,17 @@ def delete_job(
 
 
 @router.get("/interviews", response_model=PaginatedInterviewResponse)
-def get_jobs(
-        payload: dict = Depends(verify_token),
-        page: int = Query(1, ge=1),
-        limit: int = Query(10, ge=1),
-        search: Optional[str] = Query(None),
-        order_by: str = Query("interview_date"),
-        order: str = Query("desc"),
-        db: Session = Depends(get_db),
+def get_interviews(
+    payload: dict = Depends(verify_token),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1),
+    search: Optional[str] = Query(None),
+    order_by: str = Query("interview_datetime"),
+    order: str = Query("desc"),
+    db: Session = Depends(get_db),
 ):
     # Validate auth
     employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
-    print("filters", page, limit, order_by, order)
     if not employee:
         raise HTTPException(status_code=403, detail="Unauthorized access to company data")
 
@@ -75,10 +78,13 @@ def get_jobs(
     if order not in ALLOWED_ORDER_DIRS:
         raise HTTPException(status_code=400, detail=f"Invalid order direction: {order}")
 
-    # Build query
+    # Build base query
     query = (
         db.query(JobInterview)
-        .filter(JobInterview.interviewer_id == employee.id)
+        .filter(
+            JobInterview.interviewer_id == employee.id,
+            JobInterview.interview_status.notin_(EXCLUDED_STATUSES)
+        )
         .options(
             joinedload(JobInterview.application)
             .joinedload(JobApplication.candidate),
@@ -88,22 +94,18 @@ def get_jobs(
         )
     )
 
-    # if job_status and job_status != "ALL":
-    #     try:
-    #         query = query.filter(JobPosition.status == PositionEnum(job_status).value)
-    #     except ValueError:
-    #         raise HTTPException(status_code=400, detail=f"Invalid job_status: {job_status}")
-
+    # Apply search filter on job title
     if search:
         query = query.filter(JobPosition.title.ilike(f"%{search.lower()}%"))
 
-    # Apply ordering
+    # Map order_by to actual columns
     order_field_map = {
         "candidate": func.concat(Candidate.first_name, Candidate.last_name),
         "role": JobPosition.title,
         "competency": Competency.name,
         "interview_datetime": JobInterview.interview_datetime,
     }
+
     order_column = order_field_map[order_by]
     query = query.order_by(asc(order_column) if order == "asc" else desc(order_column))
 
@@ -111,28 +113,22 @@ def get_jobs(
     total = query.count()
     results = query.offset((page - 1) * limit).limit(limit).all()
 
+    # Format results
     interviews = [
         InterviewOut(
-            public_id=i.public_id,
-            interview_datetime=i.interview_datetime,
-            interview_status=i.interview_status,
-            competency=i.competency,
-            job_position=i.application.job_position,
-            candidate=i.application.candidate,
+            public_id=interview.public_id,
+            interview_datetime=interview.interview_datetime,
+            interview_status=interview.interview_status,
+            competency=interview.competency,
+            job_position=interview.application.job_position,
+            candidate=interview.application.candidate,
         )
-        for i in results
+        for interview in results
     ]
+
     return PaginatedInterviewResponse(
         interviews=interviews,
         total=total,
         page=page,
         limit=limit,
     )
-
-# @router.get("/{interview_public_id}", response_model=PaginatedApplicationResponse)
-# def get_applications_for_job_position(
-#         job_position_public_id: UUID,
-#         db: Session = Depends(get_db),
-#         payload: dict = Depends(verify_token),
-# ):
-#   pass

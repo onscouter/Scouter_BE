@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Form, Path
 from sqlalchemy import asc, desc, func, distinct, literal
 from sqlalchemy.orm import Session, joinedload
 
@@ -16,10 +17,15 @@ from app.models import (
     JobInterview,
     Candidate, PhoneNumber, InterviewStatusEnum,
 )
+from app.models.core import RoleEnum
 from app.models.core.job_position import PositionEnum
+from app.schemas.candidate import CandidateMinimal
+from app.schemas.competency import CompetencyMinimal
 from app.schemas.job import PaginatedJobResponse, JobOut, JobMinimal
 from app.schemas.job_application import PaginatedApplicationResponse, ApplicationOut
+from app.schemas.job_interview import InterviewWithMeta
 from app.schemas.success_response import SuccessResponse
+from app.schemas.employee import PaginatedEmployeeResponse, EmployeeInterviewerOut, EmployeeOut
 
 router = APIRouter()
 
@@ -135,7 +141,169 @@ def get_jobs(
     )
 
 
-@router.get("/{job_position_public_id}", response_model=PaginatedApplicationResponse)
+@router.get("/interviewer-meta/{job_interview_public_id}", response_model=InterviewWithMeta)
+def get_candidate_interview(
+        job_interview_public_id: str = Path(...),
+        db: Session = Depends(get_db),
+        payload: dict = Depends(verify_token),
+):
+    recruiter = db.query(Employee).filter_by(public_id=payload["sub"]).first()
+    if not recruiter:
+        raise HTTPException(status_code=403, detail="Recruiter not found")
+
+    job_interview = db.query(JobInterview).filter_by(public_id=job_interview_public_id).first()
+    if not job_interview:
+        raise HTTPException(status_code=404, detail="Job interview not found")
+
+    interviewer = db.query(Employee).filter_by(id=job_interview.interviewer_id).first()
+    if not interviewer:
+        raise HTTPException(status_code=404, detail="Interviewer not found")
+
+    total_interviews = (
+        db.query(JobInterview)
+        .filter_by(interviewer_id=interviewer.id)
+        .count()
+    )
+
+    application = db.query(JobApplication).filter_by(id=job_interview.application_id).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Job application not found")
+
+    candidate = db.query(Candidate).filter_by(id=application.candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    competency = db.query(Competency).filter_by(id=job_interview.competency_id).first()
+    if not competency:
+        raise HTTPException(status_code=404, detail="Competency not found")
+
+    full_name = interviewer.first_name + " " + interviewer.last_name
+
+    return InterviewWithMeta(
+        interviewer_name=full_name,
+        interviewer_role=interviewer.role,
+        total_interviews_conducted=total_interviews,
+        scheduled_at=job_interview.interview_datetime.isoformat(),
+        candidate=CandidateMinimal.model_validate(candidate),
+        competency=CompetencyMinimal.model_validate(competency),
+    )
+
+
+@router.put("/{job_interview_public_id}/add-interviewer", response_model=SuccessResponse)
+def add_interview(
+        job_interview_public_id: str = Path(...),
+        employee_public_id: str = Query(...),
+        date_time: str = Query(...),
+        db: Session = Depends(get_db),
+        payload: dict = Depends(verify_token),
+):
+    recruiter = db.query(Employee).filter_by(public_id=payload["sub"]).first()
+    if not recruiter:
+        raise HTTPException(status_code=403, detail="Recruiter not found")
+
+    interviewer = db.query(Employee).filter_by(public_id=employee_public_id).first()
+    if not interviewer:
+        raise HTTPException(status_code=403, detail="Interviewer not found")
+
+    job_interview = db.query(JobInterview).filter_by(public_id=job_interview_public_id).first()
+    if not job_interview:
+        raise HTTPException(status_code=404, detail="Job interview not found or unauthorized")
+
+    try:
+        interview_dt = datetime.fromisoformat(date_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid datetime format. Use ISO 8601.")
+    print("here", interview_dt, interviewer.id)
+    job_interview.interviewer_id = interviewer.id
+    job_interview.interview_datetime = interview_dt
+    job_interview.interview_status = InterviewStatusEnum.SCHEDULED
+    db.commit()
+
+    return SuccessResponse(
+        success=True,
+        message=f"Interviewer {interviewer.public_id} added to interview {job_interview_public_id}",
+    )
+
+
+@router.get("/get-interviewers", response_model=PaginatedEmployeeResponse)
+def get_interviewers(
+        job_position_public_id: str = Query(...),
+        job_interview_public_id: str = Query(...),
+        job_application_public_id: str = Query(...),
+
+        page: int = Query(1, ge=1),
+        limit: int = Query(10, ge=1),
+        db: Session = Depends(get_db),
+        payload: dict = Depends(verify_token),
+):
+    employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
+    if not employee:
+        raise HTTPException(status_code=403, detail="Recruiter not found")
+
+    job_position = db.query(JobPosition).filter_by(public_id=job_position_public_id).first()
+    if not job_position or job_position.company_id != employee.company_id:
+        raise HTTPException(status_code=404, detail="Job position not found or unauthorized")
+
+    job_interview = db.query(JobInterview).filter_by(public_id=job_interview_public_id).first()
+    if not job_interview:
+        raise HTTPException(status_code=404, detail="Job interview not found or unauthorized")
+
+    job_application = db.query(JobApplication).filter_by(public_id=job_application_public_id).first()
+    if not job_application or job_interview.application_id != job_application.id:
+        raise HTTPException(status_code=404, detail="Job interview unauthorized")
+
+    competency = db.query(Competency).filter_by(id=job_interview.competency_id).first()
+    candidate = db.query(Candidate).filter_by(id=job_application.candidate_id).first()
+
+    interview_stats_subq = (
+        db.query(
+            JobInterview.interviewer_id.label("interviewer_id"),
+            func.count().label("interview_count"),
+            func.max(JobInterview.interview_datetime).label("last_interviewed_at")
+        )
+        .group_by(JobInterview.interviewer_id)
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Employee,
+            interview_stats_subq.c.interview_count,
+            interview_stats_subq.c.last_interviewed_at
+        )
+        .outerjoin(interview_stats_subq, Employee.id == interview_stats_subq.c.interviewer_id)
+        .filter(
+            Employee.company_id == job_position.company_id,
+            Employee.role.in_([RoleEnum.interviewer, RoleEnum.recruiter]))
+    )
+
+    total = query.count()
+    results = query.offset((page - 1) * limit).limit(limit).all()
+
+    candidate_out = CandidateMinimal.model_validate(candidate)
+    competency_out = CompetencyMinimal.model_validate(competency)
+    employee_out = []
+    for emp, count, last in results:
+        base = EmployeeOut.model_validate(emp).model_dump()
+        enriched = {
+            **base,
+            "interview_count": count or 0,
+            "last_interviewed_at": last.isoformat() if last else None
+        }
+        validated = EmployeeInterviewerOut.model_validate(enriched)
+        employee_out.append(validated)
+
+    return PaginatedEmployeeResponse(
+        total=total,
+        page=page,
+        limit=limit,
+        candidate=candidate_out,
+        competency=competency_out,
+        employees=employee_out
+    )
+
+
+@router.get("/{job_position_public_id}/applications", response_model=PaginatedApplicationResponse)
 def get_applications_for_job_position(
         job_position_public_id: UUID,
         db: Session = Depends(get_db),
