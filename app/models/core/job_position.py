@@ -70,3 +70,19 @@ class JobPosition(AbstractBaseModel, Base):
         back_populates="job_positions",
         lazy="selectin",
     )
+
+    interview_questions: Mapped[List["InterviewQuestion"]] = relationship(
+        "InterviewQuestion",
+        back_populates="job_position",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    competency_rubric_levels: Mapped[List["CompetencyRubricLevel"]] = relationship(
+        "CompetencyRubricLevel",
+        back_populates="job_position",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+

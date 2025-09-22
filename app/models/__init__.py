@@ -2,7 +2,6 @@ from .core import (
     Company,
     Employee,
     JobPosition,
-    AccessCode,
     JobType,
     PositionEnum,
 )
@@ -34,7 +33,6 @@ __all__ = [
     "Company",
     "Employee",
     "JobPosition",
-    "AccessCode",
     "JobType",
     "PositionEnum",
 

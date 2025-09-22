@@ -1,6 +1,6 @@
 from typing import List
 
-from sqlalchemy import ForeignKey, Enum as SqlEnum, String
+from sqlalchemy import ForeignKey, Enum as SqlEnum, String, Integer
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 import enum
 
@@ -25,7 +25,15 @@ class CompetencyRubricLevel(AbstractBaseModel, Base):
     description: Mapped[str] = mapped_column(String, nullable=False)
 
     competency_id: Mapped[int] = mapped_column(
+        Integer,
         ForeignKey("competencies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    job_position_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("job_positions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -41,4 +49,10 @@ class CompetencyRubricLevel(AbstractBaseModel, Base):
         "Competency",
         back_populates="rubric_levels",
         lazy="selectin",
+    )
+
+    job_position: Mapped["JobPosition"] = relationship(
+        "JobPosition",
+        back_populates="competency_rubric_levels",
+        lazy="selectin"
     )
