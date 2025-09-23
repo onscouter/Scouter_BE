@@ -71,7 +71,8 @@ def new_job(
             rubric_level = CompetencyRubricLevel(
                 competency_id=competency.id,
                 level=score_level,
-                description=rubric_level.description
+                description=rubric_level.description,
+                job_position_id=job.id
             )
             db.add(rubric_level)
             db.flush()
@@ -91,7 +92,8 @@ def new_job(
             db.add(InterviewQuestion(
                 question_text=q.text,
                 type=question_type,
-                competency_id=competency.id
+                competency_id=competency.id,
+                job_position_id=job.id
             ))
 
     try:
