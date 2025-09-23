@@ -24,6 +24,7 @@ from app.schemas.competency import CompetencyMinimal
 from app.schemas.job import PaginatedJobResponse, JobOut, JobMinimal
 from app.schemas.job_application import PaginatedApplicationResponse, ApplicationOut
 from app.schemas.job_interview import InterviewWithMeta, InterviewOut
+from app.schemas.phone_number import PhoneNumberOut
 from app.schemas.success_response import SuccessResponse
 from app.schemas.employee import PaginatedEmployeeResponse, EmployeeInterviewerOut, EmployeeOut
 
@@ -238,6 +239,7 @@ def get_interviewers(
         db: Session = Depends(get_db),
         payload: dict = Depends(verify_token),
 ):
+
     employee = db.query(Employee).filter_by(public_id=payload["sub"]).first()
     if not employee:
         raise HTTPException(status_code=403, detail="Recruiter not found")
@@ -279,21 +281,25 @@ def get_interviewers(
             Employee.role.in_([RoleEnum.interviewer, RoleEnum.recruiter]))
     )
 
-    total = query.count()
     results = query.offset((page - 1) * limit).limit(limit).all()
+    total = len(results)
 
     candidate_out = CandidateMinimal.model_validate(candidate)
     competency_out = CompetencyMinimal.model_validate(competency)
-    employee_out = []
-    for emp, count, last in results:
-        base = EmployeeOut.model_validate(emp).model_dump()
-        enriched = {
-            **base,
-            "interview_count": count or 0,
-            "last_interviewed_at": last.isoformat() if last else None
-        }
-        validated = EmployeeInterviewerOut.model_validate(enriched)
-        employee_out.append(validated)
+    employee_out = [
+        EmployeeInterviewerOut(
+            public_id=emp.public_id,
+            first_name=emp.first_name,
+            last_name=emp.last_name,
+            role=emp.role,
+            email=emp.email,
+            interview_count=count or 0,
+            last_interviewed_at=last.isoformat() if last else None,
+            job_position=JobMinimal.model_validate(job_position),
+            phone_number=PhoneNumberOut.model_validate(emp.phone_number)
+        )
+        for emp, count, last in results
+    ]
 
     return PaginatedEmployeeResponse(
         total=total,

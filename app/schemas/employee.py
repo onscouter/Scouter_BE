@@ -52,11 +52,21 @@ class EmployeeMinimal(BaseModel):
     }
 
 
-class EmployeeInterviewerOut(EmployeeOut):
+class EmployeeInterviewerOut(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    role: RoleEnum
+    public_id: UUID = Field(alias="employee_public_id")
     interview_count: int
     last_interviewed_at: Optional[str]
+    job_position: JobMinimal
+    phone_number: PhoneNumberOut
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True
+    }
 
 
 class PaginatedEmployeeResponse(BaseModel):
